@@ -50,10 +50,10 @@ def train_model_and_encoders():
     model = LogisticRegression(random_state=42)
     model.fit(X_train, y_train)
 
-    return model, encoders
+    return model, encoders, list(X.columns)
 
 # Load trained model and encoders
-model, encoders = train_model_and_encoders()
+model, encoders, feature_columns = train_model_and_encoders()
 
 # Function to encode inputs with fallback for unseen labels
 def encode_input(value, encoder, default_value, column_name):
@@ -79,7 +79,6 @@ def run():
     applicant_income = st.number_input("Applicant's Income", min_value=0)
     coapplicant_income = st.number_input("Coapplicant's Income", min_value=0)
     loan_amount = st.number_input("Loan Amount", min_value=0)
-
     loan_term = st.number_input("Loan Term (Months)", min_value=0)
     credit_history = st.selectbox("Credit History", ['No History (0)', 'Good History (1)'])
     property_area = st.selectbox("Property Area", encoders['Property_Area'].classes_)
@@ -103,12 +102,17 @@ def run():
         input_df = pd.DataFrame([input_data])
 
         # Ensure input_df columns match model features
-        expected_columns = list(model.feature_names_in_)
-        input_df = input_df.reindex(columns=expected_columns, fill_value=0)
+        input_df = input_df.reindex(columns=feature_columns, fill_value=0)
+
+        # Debugging: Log input data
+        st.write("Input DataFrame for Prediction:", input_df)
 
         # Make Prediction
         try:
             prediction = model.predict(input_df)
+            probabilities = model.predict_proba(input_df)
+            st.write("Prediction Probabilities:", probabilities)
+
             result = 'Approved' if prediction[0] == 1 else 'Not Approved'
 
             # Display Result
