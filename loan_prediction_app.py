@@ -8,7 +8,7 @@ import joblib
 
 # Function to train the model
 @st.cache_resource
-def train_model():
+def train_model_and_encoders():
     # Load the dataset
     df = pd.read_csv('loan.csv')
 
@@ -30,11 +30,17 @@ def train_model():
     cols_to_drop = ['ApplicantIncome', 'CoapplicantIncome', 'LoanAmount', 'Total_Income', 'Loan_ID']
     df = df.drop(columns=cols_to_drop)
 
-    # Encode categorical variables
-    label_enc = LabelEncoder()
-    cols_to_encode = ['Gender', 'Married', 'Education', 'Dependents', 'Self_Employed', 'Property_Area', 'Loan_Status']
-    for col in cols_to_encode:
-        df[col] = label_enc.fit_transform(df[col])
+    # Encode categorical variables with separate encoders
+    encoders = {}
+    for col in ['Gender', 'Married', 'Education', 'Dependents', 'Self_Employed', 'Property_Area']:
+        encoder = LabelEncoder()
+        df[col] = encoder.fit_transform(df[col])
+        encoders[col] = encoder
+
+    # Target variable encoding
+    target_encoder = LabelEncoder()
+    df['Loan_Status'] = target_encoder.fit_transform(df['Loan_Status'])
+    encoders['Loan_Status'] = target_encoder
 
     # Split the data
     X = df.drop(columns=['Loan_Status'])
@@ -45,10 +51,18 @@ def train_model():
     model = LogisticRegression(random_state=42)
     model.fit(X_train, y_train)
 
-    return model, label_enc
+    return model, encoders
 
-# Load trained model and label encoder
-model, label_encoder = train_model()
+# Load trained model and encoders
+model, encoders = train_model_and_encoders()
+
+# Function to encode inputs with fallback for unseen labels
+def encode_input(value, encoder, default_value, column_name):
+    try:
+        return encoder.transform([value])[0]
+    except ValueError:
+        st.warning(f"Unrecognized value for '{column_name}': {value}. Using default '{default_value}'.")
+        return encoder.transform([default_value])[0]
 
 # Streamlit App
 def run():
@@ -57,49 +71,33 @@ def run():
     # Input Fields
     fn = st.text_input('Full Name')  # User's name
 
-    gender_display = ['Female', 'Male']
-    gender = st.selectbox("Gender", gender_display)
-
-    marital_display = ['No', 'Yes']
-    married = st.selectbox("Married", marital_display)
-
-    dependents_display = ['0', '1', '2', '3+']
-    dependents = st.selectbox("Dependents", dependents_display)
-
-    education_display = ['Not Graduate', 'Graduate']
-    education = st.selectbox("Education", education_display)
-
-    self_employed_display = ['No', 'Yes']
-    self_employed = st.selectbox("Self Employed", self_employed_display)
+    gender = st.selectbox("Gender", encoders['Gender'].classes_)
+    married = st.selectbox("Married", encoders['Married'].classes_)
+    dependents = st.selectbox("Dependents", encoders['Dependents'].classes_)
+    education = st.selectbox("Education", encoders['Education'].classes_)
+    self_employed = st.selectbox("Self Employed", encoders['Self_Employed'].classes_)
 
     applicant_income = st.number_input("Applicant's Income", min_value=0)
     coapplicant_income = st.number_input("Coapplicant's Income", min_value=0)
     loan_amount = st.number_input("Loan Amount", min_value=0)
 
-    loan_term_display = [12, 36, 60, 84, 120]
-    loan_term = st.selectbox("Loan Term (Months)", loan_term_display)
-
-    credit_history_display = ['No History (0)', 'Good History (1)']
-    credit_history = st.selectbox("Credit History", credit_history_display)
-
-    property_area_display = ['Rural', 'Semiurban', 'Urban']
-    property_area = st.selectbox("Property Area", property_area_display)
+    loan_term = st.number_input("Loan Term (Months)", min_value=0)
+    credit_history = st.selectbox("Credit History", ['No History (0)', 'Good History (1)'])
+    property_area = st.selectbox("Property Area", encoders['Property_Area'].classes_)
 
     # Prediction
     if st.button("Predict Loan Approval"):
         # Prepare input for the model
         input_data = {
-            'Gender': label_encoder.transform([gender])[0],
-            'Married': label_encoder.transform([married])[0],
-            'Dependents': label_encoder.transform([dependents])[0],
-            'Education': label_encoder.transform([education])[0],
-            'Self_Employed': label_encoder.transform([self_employed])[0],
-            'ApplicantIncome': applicant_income,
-            'CoapplicantIncome': coapplicant_income,
-            'LoanAmount': np.log(loan_amount + 1),
+            'Gender': encode_input(gender, encoders['Gender'], 'Male', 'Gender'),
+            'Married': encode_input(married, encoders['Married'], 'No', 'Married'),
+            'Dependents': encode_input(dependents, encoders['Dependents'], '0', 'Dependents'),
+            'Education': encode_input(education, encoders['Education'], 'Graduate', 'Education'),
+            'Self_Employed': encode_input(self_employed, encoders['Self_Employed'], 'No', 'Self Employed'),
+            'LoanAmountLog': np.log(loan_amount + 1) if loan_amount > 0 else 0,
             'Loan_Amount_Term': loan_term,
             'Credit_History': 1 if credit_history == 'Good History (1)' else 0,
-            'Property_Area': label_encoder.transform([property_area])[0]
+            'Property_Area': encode_input(property_area, encoders['Property_Area'], 'Urban', 'Property Area')
         }
 
         # Convert to DataFrame
