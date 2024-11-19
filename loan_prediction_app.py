@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-import joblib
 
 # Function to train the model
 @st.cache_resource
@@ -103,14 +102,21 @@ def run():
         # Convert to DataFrame
         input_df = pd.DataFrame([input_data])
 
-        # Make Prediction
-        prediction = model.predict(input_df)
-        result = 'Approved' if prediction[0] == 1 else 'Not Approved'
+        # Ensure input_df columns match model features
+        expected_columns = list(model.feature_names_in_)
+        input_df = input_df.reindex(columns=expected_columns, fill_value=0)
 
-        # Display Result
-        if prediction[0] == 1:
-            st.success(f"Congratulations {fn}, your loan is {result}!")
-        else:
-            st.error(f"Sorry {fn}, your loan is {result}!")
+        # Make Prediction
+        try:
+            prediction = model.predict(input_df)
+            result = 'Approved' if prediction[0] == 1 else 'Not Approved'
+
+            # Display Result
+            if prediction[0] == 1:
+                st.success(f"Congratulations {fn}, your loan is {result}!")
+            else:
+                st.error(f"Sorry {fn}, your loan is {result}!")
+        except ValueError as e:
+            st.error(f"Error during prediction: {str(e)}")
 
 run()
